@@ -188,8 +188,8 @@ class WaterFilter:
             self._start_sequence()
 
         elif self.state == self.SLEEPING and press_duration < BUTTON_LONG_PRESS_MS and not self.canceling:
-            print("Short press detected, returning to IDLE")  # Debug
-            self._execute_stop_to_idle_action()
+            print("Short press detected, starting sequence")  # Debug
+            self._start_sequence()
         
         elif self.state == self.TRAINING:
             print(f"Training mode release, duration: {press_duration}ms")  # Debug
@@ -226,6 +226,14 @@ class WaterFilter:
             print("Resetting canceling flag")  # Debug
             self.canceling = False
     
+    def _activate_pin5(self):
+        """Activate pin5 by switching it LOW for 250ms then back to HIGH"""
+        print("Switching pin5 LOW for 250ms")  # Debug
+        self.pin5.value(0)  # Switch to LOW
+        time.sleep_ms(PIN5_ON_TIME_MS)  # Wait exactly 250ms
+        self.pin5.value(1)  # Return to HIGH
+        print("Pin5 returned to HIGH")  # Debug
+
     def _execute_stop_to_idle_action(self):
         """Execute the completion action: switch pin5 LOW and show red LED"""
         print(f"Executing completion action, canceling current state: {self.state}")  # Debug
@@ -236,12 +244,8 @@ class WaterFilter:
         self.start_timer.deinit()
         self.long_press_timer.deinit()
         
-        # Switch pin5 LOW for exactly 250ms then back to HIGH
-        print("Switching pin5 LOW for 250ms")  # Debug
-        self.pin5.value(0)  # Switch to LOW
-        time.sleep_ms(PIN5_ON_TIME_MS)  # Wait exactly 250ms
-        self.pin5.value(1)  # Return to HIGH
-        print("Pin5 returned to HIGH")  # Debug
+        # Activate pin5
+        self._activate_pin5()
         
         # Show red LED for 1 second then return to standby
         print("Showing red LED for 1 second")  # Debug
@@ -274,6 +278,9 @@ class WaterFilter:
             self.led.toggle()
             if not self.led.is_on:
                 self.led.current_color = self.led.GREEN_LOW
+
+         # Activate pin5
+        self._activate_pin5()
         
         print("Starting green blink")  # Debug
         self.blink_timer.init(period=BLINK_PERIOD_MS, 

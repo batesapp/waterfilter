@@ -1,101 +1,82 @@
-========================================
-WATER FILTER CONTROLLER
-========================================
+Water Filter Controller
+=====================
 
-A MicroPython-based controller for a water filter system using an RP2040 microcontroller.
+A Python-based controller for managing water filter operations using a Raspberry Pi Pico (RP2040).
 
-OVERVIEW
+Features
 --------
-This project implements a water filter controller that manages the operation of a water filter system. 
-It provides visual feedback through an RGB LED and accepts user input through a button.
-The controller supports both normal operation and a training mode to customize timing.
+- LED status indication (green, red, blue, orange)
+- Button control for operation and configuration
+- Configurable timing settings
+- Persistent configuration storage
+- Power-saving idle mode
 
-HARDWARE REQUIREMENTS
---------------------
-- RP2040 Microcontroller (e.g., Raspberry Pi Pico, RP2040-Zero)
-- Button connected to GPIO Pin 27 (with pull-down resistor)
-- NeoPixel RGB LED connected to GPIO Pin 16
-- Control output on GPIO Pin 5
+Hardware Requirements
+-------------------
+- Raspberry Pi Pico (RP2040)
+- NeoPixel LED
+- Push button
+- Water filter control relay
 
-SOFTWARE DEPENDENCIES
---------------------
-- MicroPython v1.19 or later
-- Required MicroPython modules:
-  - machine (for GPIO and Timer control)
-  - neopixel (for RGB LED control)
-  - time (for timing functions)
-
-FEATURES
---------
-1. Button Operation:
-   - Short press: Start normal operation sequence
-   - Long press (≥ 2 seconds): Enter training mode
-   - Press during sequence: Cancel current operation
-
-2. LED Indicators:
-   - Green (low): Standby/Idle state
-   - Blue (low): Button pressed
-   - Green (blinking): Normal operation sequence
-   - Orange (3 flashes): Training mode save successful
-   - Red (3 quick flashes): Training mode save failed
-   - Red (1 second): Operation complete
-
-3. Operation Modes:
-   - Normal Operation: Runs the filter for a configured duration
-   - Training Mode: Allows setting a custom duration
-
-4. Configuration:
-   - Timing configuration stored in settings.txt
-   - Persists across reboots
-   - Default timing (50 seconds) if no configuration present
-
-INSTALLATION
-------------
-1. Install MicroPython on your RP2040 microcontroller
-2. Copy the following files to the microcontroller:
-   - main.py
-   - neopixel_colors.py
-
-DEVELOPMENT SETUP
+Pin Configuration
 ----------------
-For development and testing on a computer:
+- LED_PIN: 16 (GPIO pin for NeoPixel LED)
+- BUTTON_PIN: 27 (Input pin for trigger)
+- CONTROL_PIN: 5 (Control output pin for water filter)
 
-1. Create a virtual environment:
-   python -m venv venv
+Setup Instructions
+-----------------
+1. Clone the repository:
+   git clone [repository-url]
 
-2. Activate the virtual environment:
-   - Windows: venv\Scripts\activate.bat
-   - PowerShell: .\venv\Scripts\Activate.ps1
-   - Linux/Mac: source venv/bin/activate
+2. Set up Python environment:
+   ./setup_python.sh
 
-3. Install dependencies:
-   pip install -r requirements.txt
+3. Upload the code to your Raspberry Pi Pico:
+   - Connect the Pico to your computer
+   - Copy main.py to the Pico's filesystem
 
-4. Run tests:
-   python -m pytest test_water_filter.py
+4. Connect the hardware:
+   - Connect LED to GPIO 16
+   - Connect button to GPIO 27
+   - Connect control relay to GPIO 5
 
-PROJECT STRUCTURE
-----------------
-- main.py: Main application code
-- neopixel_colors.py: Color definitions for the RGB LED
-- test_mocks.py: Mock objects for testing
-- test_timer.py: Tests for timer functionality
-- test_water_filter.py: Main test suite
-- docs/requirements.md: Detailed project requirements
-- requirements.txt: Python dependencies for development
-
-USAGE
+Usage
 -----
-1. Connect the hardware as specified in the Hardware Requirements section
-2. Power on the microcontroller
-3. The LED will show green (low brightness) in standby mode
-4. Short press the button to start normal operation
-5. Long press the button to enter training mode and set a custom duration
+- Short press: Start water filter operation
+- Long press (2 seconds): Enter configuration mode
+- During operation: Press button to cancel
 
-LICENSE
+Configuration
+------------
+- Press and hold button for 2 seconds to enter training mode
+- Release button when desired timing is reached
+- LED will flash orange 3 times to confirm successful save
+
+Default Settings
+---------------
+- Blink period: 500ms
+- Long press duration: 2000ms
+- Pin5 on time: 250ms
+- Red warning time: 1000ms
+- Idle timeout: 5000ms
+
+Troubleshooting
+--------------
+- If LED doesn't light up: Check connections and power supply
+- If button doesn't respond: Check button connection and pull-down resistor
+- If configuration doesn't save: Check file system permissions
+
+License
 -------
-This project is provided as-is without any warranty. All rights reserved.
+[Add your license information here]
 
-AUTHOR
-------
-Created by Bates
+Maintenance
+----------
+- Keep the code updated with the latest MicroPython version
+- Regularly check hardware connections
+- Monitor LED brightness and adjust if needed 
+
+
+
+NOTE: Use Thonny IDE for uploading code to the Pico.
