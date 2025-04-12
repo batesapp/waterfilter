@@ -1,0 +1,268 @@
+from machine import Pin, Timer
+from neopixel import NeoPixel
+import time
+
+# Hardware Configuration
+LED_PIN = 16    # The LED is connected to GPIO pin 16 on RP2040-Zero
+BUTTON_PIN = 27 # Input pin for trigger
+CONTROL_PIN = 5 # Control output pin
+
+# Color Components (0-255, GRB order)
+COLOR_OFF = 0
+COLOR_LOW = 64  # 25% brightness
+
+# Timing Configuration (in milliseconds)
+BLINK_PERIOD_MS = 500        # 0.5 seconds per blink
+CONFIG_BLINK_PERIOD_MS = 200  # 0.2 seconds per blink in config mode (rapid)
+BUTTON_LONG_PRESS_MS = 2000  # 2 seconds for long press
+PIN5_ON_TIME_MS = 3000      # 3 seconds for pin5 on time
+RED_SHOW_TIME_MS = 1000     # 1 second red warning
+FLASH_ERROR_TIME_MS = 250   # Time for error flash
+COMPLETE_BLUE_TIME_MS = 1000 # 1 seconds blue on completion
+DEBOUNCE_MS = 100           # Button debounce time
+SETTINGS_FILE = "settings.txt"  # File to store configuration
+START_LOCKOUT_MS = 1000      # 1 second lockout when starting
+
+# Default configuration
+DEFAULT_BLINK_TIME = 50000  # Default value if no saved state (50 seconds)
+
+def save_to_file(duration_ms):
+    """Save duration to file"""
+    try:
+        with open(SETTINGS_FILE, 'w') as f:
+            f.write(str(duration_ms))
+        return True
+    except:
+        return False
+
+def read_from_file():
+    """Read duration from file, return default if file doesn't exist"""
+    try:
+        with open(SETTINGS_FILE, 'r') as f:
+            return int(f.read().strip())
+    except:
+        return DEFAULT_BLINK_TIME
+
+# Try to load TOTAL_BLINK_TIME_MS from file
+TOTAL_BLINK_TIME_MS = read_from_file()
+print(f"Loaded configuration: {TOTAL_BLINK_TIME_MS}ms ({TOTAL_BLINK_TIME_MS/1000:.1f} seconds)")  # Debug
+
+class LEDController:
+    # Colors - GRB order (Green, Red, Blue)
+    OFF = (COLOR_OFF, COLOR_OFF, COLOR_OFF)
+    RED_LOW = (COLOR_OFF, COLOR_LOW, COLOR_OFF)
+    GREEN_LOW = (COLOR_LOW, COLOR_OFF, COLOR_OFF)
+    BLUE_LOW = (COLOR_OFF, COLOR_OFF, COLOR_LOW)
+    ORANGE_LOW = (10, 128, COLOR_OFF)  # Mix of green and red for orange
+    
+    def __init__(self, pin_num):
+        self.led = NeoPixel(Pin(pin_num), 1)
+        self.current_color = self.GREEN_LOW
+        self.is_on = True
+        
+    def set_color(self, color):
+        self.current_color = color
+        self.led[0] = color
+        self.led.write()
+        self.is_on = True
+        
+    def turn_off(self):
+        self.led[0] = self.OFF
+        self.led.write()
+        self.is_on = False
+        
+    def toggle(self):
+        if self.is_on:
+            self.turn_off()
+        else:
+            self.set_color(self.current_color)
+
+class WaterFilter:
+    # States
+    IDLE = 'IDLE'
+    BLINKING = 'BLINKING'
+    TRAINING = 'TRAINING'
+    
+    def __init__(self):
+        # Initialize LED
+        self.led = LEDController(LED_PIN)
+        
+        # Initialize pin5
+        self.pin5 = Pin(CONTROL_PIN, Pin.OUT)
+        
+        # Initialize button with interrupt
+        self.button = Pin(BUTTON_PIN, Pin.IN, Pin.PULL_DOWN)
+        print("Initializing button on pin", BUTTON_PIN)  # Debug
+        self.button.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=self._button_handler)
+        
+        # Initialize timers
+        self.blink_timer = Timer()
+        self.start_timer = Timer()
+        self.long_press_timer = Timer()
+        
+        # State management
+        self.state = self.IDLE
+        self.last_press = 0  # For debouncing
+        self.button_press_start = 0  # For long press detection
+        
+        # Start in idle state with green light
+        self.led.set_color(self.led.GREEN_LOW)
+        print("Initialization complete, in IDLE state")  # Debug
+    
+    def _button_handler(self, pin):
+        """Handle button interrupt"""
+        current_time = time.ticks_ms()
+        button_state = "pressed" if pin.value() else "released"
+        print(f"Button interrupt: {button_state}, pin value: {pin.value()}")  # Debug
+        
+        # Debounce
+        if time.ticks_diff(current_time, self.last_press) < DEBOUNCE_MS:
+            print("Debounce skip")  # Debug
+            return
+        self.last_press = current_time
+        
+        if pin.value():  # Button pressed
+            print(f"Handling button press, current state: {self.state}")  # Debug
+            self._handle_button_press(current_time)
+        else:  # Button released
+            print(f"Handling button release, current state: {self.state}")  # Debug
+            self._handle_button_release(current_time)
+    
+    def _handle_button_press(self, current_time):
+        """Handle button press - change states and provide immediate feedback"""
+        print("Button pressed, state:", self.state)  # Debug
+        self.button_press_start = current_time
+        
+        if self.state == self.IDLE:
+            # Show blue LED immediately
+            self.led.set_color(self.led.BLUE_LOW)
+            
+            # Start timer to check for long press
+            def check_long_press(timer):
+                if self.button.value():  # Still pressed
+                    press_duration = time.ticks_diff(time.ticks_ms(), self.button_press_start)
+                    print(f"Long press check: {press_duration}ms")  # Debug
+                    if press_duration >= BUTTON_LONG_PRESS_MS:
+                        print("Long press detected, entering training mode")  # Debug
+                        self.long_press_timer.deinit()
+                        self.state = self.TRAINING
+                        self._start_training_blink()
+            
+            self.long_press_timer.init(period=100, callback=check_long_press)
+            
+        elif self.state == self.TRAINING:
+            print("Button pressed while in training mode")  # Debug
+            # Nothing to do on press, wait for release
+            pass
+            
+        elif self.state == self.BLINKING:
+            print("Button pressed while blinking")  # Debug
+            self.blink_timer.deinit()
+            self._execute_action()
+    
+    def _handle_button_release(self, current_time):
+        """Handle button release - start sequence if it was a short press"""
+        print(f"Button released, state: {self.state}, time: {current_time}")  # Debug
+        press_duration = time.ticks_diff(current_time, self.button_press_start)
+        print(f"Press duration: {press_duration}ms")  # Debug
+        self.long_press_timer.deinit()
+        
+        if self.state == self.IDLE and press_duration < BUTTON_LONG_PRESS_MS:
+            print("Short press detected, starting sequence")  # Debug
+            self._start_sequence()
+        elif self.state == self.TRAINING:
+            print(f"Training mode release, duration: {press_duration}ms")  # Debug
+            # Calculate total training time from the original press
+            config_time = time.ticks_diff(current_time, self.button_press_start)
+            print(f"Saving config time: {config_time}ms")  # Debug
+            
+            # Try to save configuration
+            if save_to_file(config_time):
+                print("Save successful")  # Debug
+                global TOTAL_BLINK_TIME_MS
+                TOTAL_BLINK_TIME_MS = config_time
+                
+                # Flash orange 3 times to indicate successful save
+                for _ in range(3):
+                    self.led.set_color(self.led.ORANGE_LOW)
+                    time.sleep_ms(500)
+                    self.led.turn_off()
+                    time.sleep_ms(500)
+            else:
+                print("Save failed")  # Debug
+                # If save fails, flash red 3 times rapidly
+                for _ in range(3):
+                    self.led.set_color(self.led.RED_LOW)
+                    time.sleep_ms(FLASH_ERROR_TIME_MS)
+                    self.led.turn_off()
+                    time.sleep_ms(FLASH_ERROR_TIME_MS)
+            
+            # Execute action after save feedback
+            self._execute_action()
+    
+    def _execute_action(self):
+        """Execute the completion action: turn on pin5 and show red LED"""
+        print("Executing completion action")  # Debug
+        # Stop all timers first
+        self.blink_timer.deinit()
+        self.start_timer.deinit()
+        self.long_press_timer.deinit()
+        
+        # Turn on pin5 and set timer to turn it off
+        print("Turning on pin5 for 3 seconds")  # Debug
+        self.pin5.value(1)
+        Timer().init(mode=Timer.ONE_SHOT, period=PIN5_ON_TIME_MS, callback=lambda t: self.pin5.value(0))
+        
+        # Show red LED for 1 second then return to standby
+        print("Showing red LED for 1 second")  # Debug
+        self.led.set_color(self.led.RED_LOW)
+        time.sleep_ms(RED_SHOW_TIME_MS)
+        
+        # Return to standby (green LED)
+        print("Returning to standby (green LED)")  # Debug
+        self.state = self.IDLE
+        self.led.set_color(self.led.GREEN_LOW)
+    
+    def _start_sequence(self):
+        """Start the normal blinking sequence"""
+        print(f"Starting normal sequence, will run for {TOTAL_BLINK_TIME_MS}ms ({TOTAL_BLINK_TIME_MS/1000:.1f} seconds)")  # Debug
+        self.state = self.BLINKING
+        
+        # Start blinking green
+        def blink(timer):
+            self.led.toggle()
+            if not self.led.is_on:
+                self.led.current_color = self.led.GREEN_LOW
+        
+        print("Starting green blink")  # Debug
+        self.blink_timer.init(period=BLINK_PERIOD_MS, 
+                            mode=Timer.PERIODIC,
+                            callback=blink)
+        
+        # Set timer for completion
+        print("Setting completion timer")  # Debug
+        self.start_timer.init(period=TOTAL_BLINK_TIME_MS,
+                            mode=Timer.ONE_SHOT,
+                            callback=lambda t: self._execute_action())
+    
+    def _start_training_blink(self):
+        """Start rapid blinking for training mode"""
+        print("Starting training blink")  # Debug
+        def rapid_blink(timer):
+            if self.state == self.TRAINING:  # Only blink if still in training
+                self.led.toggle()
+                if not self.led.is_on:
+                    self.led.current_color = self.led.BLUE_LOW
+        
+        # Stop any existing blink timer
+        self.blink_timer.deinit()
+        # Set initial color and start rapid blinking
+        self.led.set_color(self.led.BLUE_LOW)
+        self.blink_timer.init(period=CONFIG_BLINK_PERIOD_MS, callback=rapid_blink)
+
+# Create and run the water filter controller
+filter = WaterFilter()
+
+# Main loop just keeps the program running
+while True:
+    time.sleep(1)
