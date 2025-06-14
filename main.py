@@ -6,6 +6,7 @@ import time
 LED_PIN = 16    # The LED is connected to GPIO pin 16 on RP2040-Zero
 BUTTON_PIN = 27 # Input pin for trigger
 CONTROL_PIN = 5 # Control output pin
+PIN3 = 3        # Simple LED on pin 3
 
 # Color Components (0-255, GRB order)
 COLOR_OFF = 0
@@ -60,17 +61,24 @@ class LEDController:
         self.led = NeoPixel(Pin(pin_num), 1)
         self.current_color = self.GREEN_LOW
         self.is_on = True
+        # Initialize PIN3 as output and turn it off initially
+        self.pin3 = Pin(PIN3, Pin.OUT)
+        self.pin3.value(0)
         
     def set_color(self, color):
         self.current_color = color
         self.led[0] = color
         self.led.write()
         self.is_on = True
+        # Turn on PIN3 whenever the color LED is on
+        self.pin3.value(1)
         
     def turn_off(self):
         self.led[0] = self.OFF
         self.led.write()
         self.is_on = False
+        # Turn off PIN3 whenever the color LED is off
+        self.pin3.value(0)
         
     def toggle(self):
         if self.is_on:
